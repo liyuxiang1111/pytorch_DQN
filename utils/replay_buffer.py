@@ -86,26 +86,29 @@ class ReplayBuffer(object):
         """
         根据索引 `idx` 编码观察。
         """
-        end_idx   = idx + 1 # make noninclusive
+        end_idx   = idx + 1 # 设置为非包含
         start_idx = end_idx - self.frame_history_len
-        # this checks if we are using low-dimensional observations, such as RAM
-        # state, in which case we just directly return the latest RAM.
+
+        # 检查是否使用低维度观察（例如 RAM 状态）
         if len(self.obs.shape) == 2:
             return self.obs[end_idx-1]
-        # if there weren't enough frames ever in the buffer for context
+
+        # 如果缓冲区中没有足够的帧
         if start_idx < 0 and self.num_in_buffer != self.size:
             start_idx = 0
         for idx in range(start_idx, end_idx - 1):
             if self.done[idx % self.size]:
                 start_idx = idx + 1
+
+        # 计算缺失的历史帧数
         missing_context = self.frame_history_len - (end_idx - start_idx)
-        # if zero padding is needed for missing context
-        # or we are on the boundry of the buffer
+
+        # 如果需要零填充或位于缓冲区边界
         if start_idx < 0 or missing_context > 0:
             frames = [np.zeros_like(self.obs[0]) for _ in range(missing_context)]
             for idx in range(start_idx, end_idx):
                 frames.append(self.obs[idx % self.size])
-            return np.concatenate(frames, 0) # c, h, w instead of h, w c
+            return np.concatenate(frames, 0) # 返回格式为 (c, h, w)
         else:
             # this optimization has potential to saves about 30% compute time \o/
             # c, h, w instead of h, w c
@@ -113,9 +116,20 @@ class ReplayBuffer(object):
             return self.obs[start_idx:end_idx].reshape(-1, img_h, img_w)
 
     def store_frame(self, frame):
-        # if observation is an image...
+        """
+        将一帧图像存储在缓冲区的下一个可用索引中，如果必要会覆盖旧的帧。
+
+        参数:
+        frame: np.array
+            要存储的帧，形状为 (img_h, img_w, img_c)
+
+        返回:
+        idx: int
+            该帧的存储索引，供 `store_effect` 使用。
+        """
+        # 如果观察为图像
         if len(frame.shape) > 1:
-            # transpose image frame into c, h, w instead of h, w, c
+            # 将图像帧从 h, w, c 转置为 c, h, w
             frame = frame.transpose(2, 0, 1)
 
         if self.obs is None:
@@ -134,6 +148,16 @@ class ReplayBuffer(object):
     def store_effect(self, idx, action, reward, done):
         """
         存储在 `store_frame` 之后采取的动作的效果。
+
+        参数:
+        idx: int
+            最近观察帧在缓冲区中的索引（由 `store_frame` 返回）。
+        action: int
+            执行的动作。
+        reward: float
+            执行动作后得到的奖励。
+        done: bool
+            如果动作结束了当前回合，则为 True。
         """
         self.action[idx] = action
         self.reward[idx] = reward
